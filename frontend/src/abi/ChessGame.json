@@ -1,0 +1,89 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getGame",
+    "inputs": [{ "name": "gameCode", "type": "bytes32", "internalType": "bytes32" }],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct ChessGame.Game",
+        "components": [
+          { "name": "playerWhite",  "type": "address", "internalType": "address" },
+          { "name": "playerBlack",  "type": "address", "internalType": "address" },
+          { "name": "boardState",   "type": "bytes",   "internalType": "bytes"   },
+          { "name": "currentTurn",  "type": "uint8",   "internalType": "uint8"   },
+          { "name": "status",       "type": "uint8",   "internalType": "uint8"   },
+          { "name": "inCheck",      "type": "bool",    "internalType": "bool"    },
+          { "name": "winner",       "type": "address", "internalType": "address" },
+          { "name": "drawOfferer",  "type": "address", "internalType": "address" },
+          { "name": "activeSince",  "type": "uint64",  "internalType": "uint64"  },
+          { "name": "endReason",    "type": "string",  "internalType": "string"  }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "coordinator",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address", "internalType": "address" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "GameCreated",
+    "inputs": [
+      { "name": "gameCode",    "type": "bytes32", "indexed": true },
+      { "name": "playerWhite", "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PlayerJoined",
+    "inputs": [
+      { "name": "gameCode",    "type": "bytes32", "indexed": true },
+      { "name": "playerBlack", "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MoveMade",
+    "inputs": [
+      { "name": "gameCode", "type": "bytes32", "indexed": true },
+      { "name": "fromRow",  "type": "uint8",   "indexed": false },
+      { "name": "fromCol",  "type": "uint8",   "indexed": false },
+      { "name": "toRow",    "type": "uint8",   "indexed": false },
+      { "name": "toCol",    "type": "uint8",   "indexed": false },
+      { "name": "inCheck",  "type": "bool",    "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "DrawOffered",
+    "inputs": [
+      { "name": "gameCode", "type": "bytes32", "indexed": true },
+      { "name": "offerer",  "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GameEnded",
+    "inputs": [
+      { "name": "gameCode", "type": "bytes32", "indexed": true },
+      { "name": "winner",   "type": "address", "indexed": true },
+      { "name": "reason",   "type": "string",  "indexed": false }
+    ],
+    "anonymous": false
+  }
+]
