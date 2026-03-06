@@ -15,8 +15,9 @@ class GameModel {
 		wagerAmount = null,
 		playerWhiteAddress = null,
 		timeControlSeconds = 600,
+		gameCode = null,
 	) {
-		const gameCode = this.generateGameCode();
+		if (!gameCode) gameCode = this.generateGameCode();
 		const initialBoard = chessEngine.initBoard();
 
 		const { data, error } = await supabase

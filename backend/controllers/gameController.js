@@ -5,12 +5,13 @@ const chessGameService = require("../services/chessGameService");
 class GameController {
   async createGame(req, res) {
     try {
-      const { gameType, wagerAmount, playerWhiteAddress, timeControlSeconds } = req.body;
+      const { gameType, wagerAmount, playerWhiteAddress, timeControlSeconds, gameCode } = req.body;
       const game = await gameModel.createGame(
         gameType,
         wagerAmount,
         playerWhiteAddress,
         timeControlSeconds || 600,
+        gameCode || null,
       );
       // On-chain game creation is deferred until both players join (activateGame).
       res.status(201).json({ success: true, data: game });

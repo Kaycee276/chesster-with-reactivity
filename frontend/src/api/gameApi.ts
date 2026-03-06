@@ -8,6 +8,7 @@ export const api = {
 		playerAddress?: string,
 		wagerAmount?: string,
 		timeControlSeconds?: number,
+		gameCode?: string,
 	) => {
 		const res = await fetch(`${API_URL}/games`, {
 			method: "POST",
@@ -17,6 +18,7 @@ export const api = {
 				playerWhiteAddress: playerAddress,
 				wagerAmount: wagerAmount ? parseFloat(wagerAmount) : undefined,
 				timeControlSeconds: timeControlSeconds ?? 600,
+				gameCode,
 			}),
 		});
 		return res.json();
