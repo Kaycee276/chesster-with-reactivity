@@ -98,8 +98,8 @@ interface GameStore {
 }
 
 // ── Reactivity subscription setup ─────────────────────────────────────────────
-function subscribeReactivity(gameCode: string) {
-  reactivityService.subscribeToGame(
+async function subscribeReactivity(gameCode: string) {
+  await reactivityService.subscribeToGame(
     gameCode,
     (contractGame: ContractGame) => {
       const { timeControlSeconds } = useGameStore.getState();
@@ -193,7 +193,7 @@ export const useGameStore = create<GameStore>()(
           set({ gameCode: code, playerColor: color, playerAddress: walletAddress });
           await get().fetchGameState();
 
-          subscribeReactivity(code);
+          await subscribeReactivity(code);
 
           if (get().status === "active") {
             startLocalTimer();
@@ -232,7 +232,7 @@ export const useGameStore = create<GameStore>()(
             escrowResolveTx: data.data.escrow_resolve_tx ?? null,
           });
 
-          subscribeReactivity(code);
+          await subscribeReactivity(code);
 
           if (data.data.status === "active") {
             startLocalTimer();
