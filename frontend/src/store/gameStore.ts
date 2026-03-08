@@ -249,16 +249,21 @@ export const useGameStore = create<GameStore>()(
         const data = await api.getGame(gameCode);
         if (data.success) {
           const tcs = data.data.time_control_seconds ?? 600;
+          const nextStatus = data.data.status;
+
+          // While game is actively running, do NOT reset the live countdown —
+          // only update board/turn/state fields so opponent moves appear.
+          const isActivePolling = nextStatus === "active" && prevStatus === "active";
+          const isTransitionToActive = nextStatus === "active" && prevStatus === "waiting";
+
           set({
             board: data.data.board_state,
             currentTurn: data.data.current_turn,
-            status: data.data.status,
+            status: nextStatus,
             inCheck: data.data.in_check ?? false,
             winner: data.data.winner ?? null,
             drawOffer: data.data.draw_offer ?? null,
             turnStartedAt: data.data.turn_started_at ?? null,
-            secondsLeft: tcs,
-            timeControlSeconds: tcs,
             capturedWhite: data.data.captured_white ?? [],
             capturedBlack: data.data.captured_black ?? [],
             lastMove: data.data.last_move ?? null,
@@ -268,13 +273,29 @@ export const useGameStore = create<GameStore>()(
             escrowCreateTx: data.data.escrow_create_tx ?? null,
             escrowJoinTx: data.data.escrow_join_tx ?? null,
             escrowResolveTx: data.data.escrow_resolve_tx ?? null,
+            // Only update timer config when not actively polling mid-game
+            ...(!isActivePolling && { secondsLeft: tcs, timeControlSeconds: tcs }),
           });
 
-          // Game just became active (opponent joined) — start timer and
-          // re-subscribe to Reactivity now that the game exists on-chain.
-          if (data.data.status === "active" && prevStatus === "waiting") {
+          if (isTransitionToActive) {
+            // Seed timer with elapsed time since game started.
+            // turn_started_at is set to now when both players join, so it
+            // accurately reflects how long ago the game actually began.
+            const turnStartedAt = data.data.turn_started_at;
+            let secondsLeft = tcs;
+            if (turnStartedAt) {
+              const elapsed = Math.floor(
+                (Date.now() - new Date(turnStartedAt).getTime()) / 1000,
+              );
+              secondsLeft = Math.max(0, tcs - elapsed);
+            }
+            set({ secondsLeft, timeControlSeconds: tcs });
             startLocalTimer();
             subscribeReactivity(gameCode).catch(() => {});
+          }
+
+          if (nextStatus === "finished") {
+            stopLocalTimer();
           }
         }
       },
@@ -470,6 +491,17 @@ export const useGameNotifications = () => {
   // The interval is cleared automatically when status leaves "waiting".
   useEffect(() => {
     if (status !== "waiting" || !gameCode) return;
+    const id = setInterval(fetchGameState, 3000);
+    return () => clearInterval(id);
+  }, [status, gameCode, fetchGameState]);
+
+  // Poll the DB every 3 s while the game is active.
+  // This makes opponent moves visible even when Reactivity/on-chain recordMove
+  // is unavailable — the DB is always the source of truth for board state.
+  // fetchGameState skips resetting the timer during active polling so the
+  // local countdown is not disrupted.
+  useEffect(() => {
+    if (status !== "active" || !gameCode) return;
     const id = setInterval(fetchGameState, 3000);
     return () => clearInterval(id);
   }, [status, gameCode, fetchGameState]);
