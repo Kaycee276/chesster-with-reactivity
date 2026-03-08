@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { api } from "../api/gameApi";
 import { reactivityService } from "../api/reactivity";
 import type { ContractGame } from "../api/reactivity";
@@ -243,7 +243,7 @@ export const useGameStore = create<GameStore>()(
       },
 
       fetchGameState: async () => {
-        const { gameCode } = get();
+        const { gameCode, status: prevStatus } = get();
         if (!gameCode) return;
 
         const data = await api.getGame(gameCode);
@@ -269,6 +269,13 @@ export const useGameStore = create<GameStore>()(
             escrowJoinTx: data.data.escrow_join_tx ?? null,
             escrowResolveTx: data.data.escrow_resolve_tx ?? null,
           });
+
+          // Game just became active (opponent joined) — start timer and
+          // re-subscribe to Reactivity now that the game exists on-chain.
+          if (data.data.status === "active" && prevStatus === "waiting") {
+            startLocalTimer();
+            subscribeReactivity(gameCode).catch(() => {});
+          }
         }
       },
 
@@ -399,6 +406,7 @@ export const useGameNotifications = () => {
   const winner = useGameStore((s) => s.winner);
   const endReason = useGameStore((s) => s.endReason);
   const playerColor = useGameStore((s) => s.playerColor);
+  const gameCode = useGameStore((s) => s.gameCode);
   const inCheck = useGameStore((s) => s.inCheck);
   const currentTurn = useGameStore((s) => s.currentTurn);
   const drawOffer = useGameStore((s) => s.drawOffer);
@@ -455,4 +463,23 @@ export const useGameNotifications = () => {
       addToast("Opponent offered a draw", "info");
     }
   }, [drawOffer, playerColor, status, addToast]);
+
+  // Poll the DB every 3 s while waiting for the opponent to join.
+  // This is a reliable fallback for when Reactivity hasn't fired yet
+  // (e.g. activateGame on the backend failed or the on-chain tx is slow).
+  // The interval is cleared automatically when status leaves "waiting".
+  useEffect(() => {
+    if (status !== "waiting" || !gameCode) return;
+    const id = setInterval(fetchGameState, 3000);
+    return () => clearInterval(id);
+  }, [status, gameCode, fetchGameState]);
+
+  // Notify Player 1 the moment their opponent joins.
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    if (prevStatusRef.current === "waiting" && status === "active") {
+      addToast("Opponent joined — game on!", "success");
+    }
+    prevStatusRef.current = status;
+  }, [status, addToast]);
 };
