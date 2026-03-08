@@ -362,6 +362,7 @@ class GameModel {
 				captured_white: newCapturedWhite,
 				captured_black: newCapturedBlack,
 				turn_started_at: new Date().toISOString(),
+				draw_offer: null, // clear any pending draw offer on move (mirrors on-chain recordMove)
 			})
 			.eq("game_code", gameCode)
 			.select()
@@ -434,14 +435,21 @@ class GameModel {
 	}
 
 	async acceptDraw(gameCode) {
+		const existing = await this.getGame(gameCode);
+		if (!existing) throw new Error("Game not found");
+		if (existing.status !== "active") throw new Error("Game is not active");
+		if (!existing.draw_offer) throw new Error("No draw offer pending");
+
 		const { data, error } = await supabase
 			.from("games")
 			.update({ status: "finished", winner: "draw", draw_offer: null, end_reason: "draw_agreed" })
 			.eq("game_code", gameCode)
+			.eq("status", "active")
 			.select()
 			.single();
 
 		if (error) throw error;
+		if (!data) throw new Error("Game could not be updated — it may have already ended");
 
 		this._settleEscrow(gameCode, data, "draw").catch((err) => {
 			console.error(`[Escrow] _settleEscrow threw for ${gameCode}:`, err.message);
