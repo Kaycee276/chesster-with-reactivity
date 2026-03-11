@@ -117,6 +117,7 @@ function ChessBoardInner() {
 		resignGame,
 		offerDraw,
 		acceptDraw,
+		fetchGameState,
 	} = useGameStore();
 	const { addToast, removeToast } = useToastStore();
 	const navigate = useNavigate();
@@ -447,17 +448,22 @@ function ChessBoardInner() {
 								</p>
 							</div>
 						) : escrowStatus === "failed" ? (
-							<div className="flex flex-col gap-2">
+							<div className="flex flex-col gap-3">
 								<div className="flex items-center gap-2 text-red-400">
 									<AlertTriangle size={18} className="shrink-0" />
-									<span className="font-medium text-sm">Payout failed on-chain.</span>
+									<span className="font-medium text-sm">Payout could not be sent.</span>
 								</div>
 								<p className="text-xs text-(--text-tertiary) leading-relaxed">
-									The escrow could not be settled automatically. Please contact
-									support with your game code{" "}
-									<span className="font-mono font-bold text-(--text)">{gameCode}</span>{" "}
-									so your wager can be returned manually.
+									This sometimes happens due to a network hiccup. Try refreshing
+									the page or tap the button below to check again.
 								</p>
+								<button
+									onClick={() => fetchGameState()}
+									className="w-full py-2.5 rounded-xl bg-(--accent-dark) hover:bg-(--accent-primary) text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+								>
+									<Loader2 size={13} />
+									Retry payout
+								</button>
 							</div>
 						) : (
 							<div className="flex flex-col gap-2">
