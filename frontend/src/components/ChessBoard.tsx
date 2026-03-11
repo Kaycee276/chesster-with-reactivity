@@ -96,10 +96,121 @@ function BoardSkeleton() {
 	);
 }
 
+// ── Waiting screen shown to the creator before an opponent joins ──────────────
+function WaitingScreen() {
+	const gameCode = useGameStore((s) => s.gameCode);
+	const status = useGameStore((s) => s.status);
+	const wagerAmount = useGameStore((s) => s.wagerAmount);
+	const tokenAddress = useGameStore((s) => s.tokenAddress);
+	const leaveGame = useGameStore((s) => s.leaveGame);
+	const { addToast } = useToastStore();
+	const navigate = useNavigate();
+	const [copied, setCopied] = useState(false);
+	const [confirmLeave, setConfirmLeave] = useState(false);
+
+	// Handle auto-cancellation (game expired after 1 hour with no opponent)
+	useEffect(() => {
+		if (status === "cancelled") {
+			addToast(
+				"Your game was cancelled — no one joined within 1 hour. Your wager (if any) has been refunded.",
+				"info",
+			);
+			leaveGame();
+			navigate("/");
+		}
+	}, [status, addToast, leaveGame, navigate]);
+
+	const copyCode = async () => {
+		if (!gameCode) return;
+		await navigator.clipboard.writeText(gameCode);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 1200);
+	};
+
+	const handleLeave = () => {
+		leaveGame();
+		navigate("/");
+	};
+
+	const potDisplay = wagerAmount
+		? `${parseFloat(String(wagerAmount)) * 2} ${tokenLabel(tokenAddress)}`
+		: null;
+
+	return (
+		<div className="h-dvh w-dvw flex flex-col items-center justify-center bg-(--bg) p-4 gap-6">
+			{confirmLeave && (
+				<ConfirmModal
+					title="Leave game?"
+					message={
+						wagerAmount
+							? "Your wager is locked on-chain and will be refunded only after the game expires (1 hour). Are you sure?"
+							: "Are you sure you want to leave while waiting?"
+					}
+					confirmLabel="Leave"
+					onConfirm={handleLeave}
+					onCancel={() => setConfirmLeave(false)}
+				/>
+			)}
+
+			<div className="flex flex-col items-center gap-6 w-full max-w-sm">
+				{/* Animated chess king spinner */}
+				<div className="relative w-20 h-20">
+					<div className="absolute inset-0 rounded-full border-4 border-(--bg-secondary) border-t-(--accent-primary) animate-spin" />
+					<span className="absolute inset-0 flex items-center justify-center text-3xl select-none">
+						♔
+					</span>
+				</div>
+
+				{/* Title */}
+				<div className="text-center flex flex-col gap-1">
+					<h2 className="text-xl font-bold">Waiting for opponent…</h2>
+					<p className="text-sm text-(--text-tertiary)">
+						Share the game code below to invite someone
+					</p>
+				</div>
+
+				{/* Copyable game code */}
+				<button
+					onClick={copyCode}
+					className="flex items-center gap-3 px-6 py-3 bg-(--bg-secondary) border border-(--border) rounded-xl font-mono text-2xl font-bold tracking-widest hover:border-(--accent-primary)/60 transition-colors"
+				>
+					{gameCode}
+					{copied ? (
+						<Check size={16} className="text-green-400 shrink-0" />
+					) : (
+						<Copy size={16} className="text-(--text-tertiary) shrink-0" />
+					)}
+				</button>
+
+				{/* Wager notice */}
+				{wagerAmount && (
+					<div className="flex items-center gap-2 text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 rounded-lg px-3 py-2 text-center leading-relaxed">
+						<Lock size={12} className="shrink-0" />
+						<span>
+							<span className="font-semibold">{potDisplay}</span> locked in
+							escrow — released when the game ends
+						</span>
+					</div>
+				)}
+
+				{/* Leave */}
+				<button
+					onClick={() => (wagerAmount ? setConfirmLeave(true) : handleLeave())}
+					className="text-sm text-(--text-tertiary) hover:text-(--text) transition-colors underline underline-offset-2"
+				>
+					Leave game
+				</button>
+			</div>
+		</div>
+	);
+}
+
 // Outer wrapper: shows skeleton until board data arrives (keeps hooks rule-safe)
 export default function ChessBoard() {
 	const board = useGameStore((s) => s.board);
+	const status = useGameStore((s) => s.status);
 	if (!board || board.length === 0) return <BoardSkeleton />;
+	if (status === "waiting") return <WaitingScreen />;
 	return <ChessBoardInner />;
 }
 
@@ -199,16 +310,14 @@ function ChessBoardInner() {
 		}
 	}, [status, willReceiveTokens]);
 
-	// Detect game cancellation (waiting > 1 hour, no opponent joined).
-	// Notify the creator and return them to the lobby automatically.
-	const prevStatusRef = useRef(status);
+	// Safety net: if ChessBoardInner ever receives a cancelled status
+	// (e.g. rejoining a cancelled game URL), redirect back to lobby.
 	useEffect(() => {
 		if (status === "cancelled") {
 			addToast("Your game was cancelled — no one joined within 1 hour. Your wager (if any) has been refunded.", "info");
 			leaveGame();
 			navigate("/");
 		}
-		prevStatusRef.current = status;
 	}, [status, addToast, leaveGame, navigate]);
 
 	const possibleMoves = useMemo(() => {
