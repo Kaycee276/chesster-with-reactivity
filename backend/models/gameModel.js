@@ -152,6 +152,22 @@ class GameModel {
 			}
 		}
 
+		// Retry escrow settlement if the game is finished but settlement never
+		// completed (e.g. server restarted after game ended before _settleEscrow
+		// finished). The on-chain check inside _settleEscrow is idempotent —
+		// if already RESOLVED it just syncs the DB and returns.
+		if (
+			game.status === "finished" &&
+			game.wager_amount &&
+			game.escrow_status !== "settled" &&
+			game.escrow_status !== "failed" &&
+			game.escrow_status !== "refunded"
+		) {
+			this._settleEscrow(gameCode, game, game.winner).catch((err) => {
+				console.error(`[Escrow] retry _settleEscrow for ${gameCode}:`, err.message);
+			});
+		}
+
 		return game;
 	}
 

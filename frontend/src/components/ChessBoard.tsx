@@ -386,8 +386,8 @@ function ChessBoardInner() {
 			{showPayoutModal && wagerAmount && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
 					<div className="relative w-full max-w-sm mx-4 bg-(--bg-secondary) border border-(--border) rounded-2xl p-6 flex flex-col gap-5 shadow-2xl">
-						{/* Close button — only after payout is confirmed */}
-						{escrowResolveTx && (
+						{/* Close button — after payout confirmed or if escrow failed */}
+						{(escrowResolveTx || escrowStatus === "failed") && (
 							<button
 								onClick={() => setShowPayoutModal(false)}
 								className="absolute top-4 right-4 text-(--text-tertiary) hover:text-(--text) transition-colors"
@@ -439,11 +439,24 @@ function ChessBoardInner() {
 									className="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-green-500/15 border border-green-500/30 text-green-400 hover:bg-green-500/25 transition-colors text-sm font-semibold"
 								>
 									<ExternalLink size={14} />
-									View transaction on Etherscan
+									View on Somnia Explorer
 								</a>
 								<p className="text-xs text-(--text-tertiary) text-center">
-									Payout visible under the "Internal Txns" tab of the contract
+									Payout visible under the “Internal Txns” tab of the contract
 									address
+								</p>
+							</div>
+						) : escrowStatus === "failed" ? (
+							<div className="flex flex-col gap-2">
+								<div className="flex items-center gap-2 text-red-400">
+									<AlertTriangle size={18} className="shrink-0" />
+									<span className="font-medium text-sm">Payout failed on-chain.</span>
+								</div>
+								<p className="text-xs text-(--text-tertiary) leading-relaxed">
+									The escrow could not be settled automatically. Please contact
+									support with your game code{" "}
+									<span className="font-mono font-bold text-(--text)">{gameCode}</span>{" "}
+									so your wager can be returned manually.
 								</p>
 							</div>
 						) : (
