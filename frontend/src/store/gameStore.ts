@@ -536,10 +536,17 @@ export const useSoundEffects = () => {
   const prevCapturedRef = useRef(0);
   const prevStatusRef   = useRef(status);
   const prevInCheckRef  = useRef(false);
+  const prevMoveKeyRef  = useRef<string | null>(null);
 
   // Move / capture / castle / promote sounds
   useEffect(() => {
     if (!lastMove) return;
+
+    // Deduplicate: polling sets lastMove to a new object every 3 s even when
+    // no move was made. Compare by value so we only beep on a real new move.
+    const moveKey = `${lastMove.from[0]},${lastMove.from[1]}-${lastMove.to[0]},${lastMove.to[1]}-${lastMove.piece}`;
+    if (moveKey === prevMoveKeyRef.current) return;
+    prevMoveKeyRef.current = moveKey;
 
     const totalCaptured =
       (capturedWhite?.length ?? 0) + (capturedBlack?.length ?? 0);
