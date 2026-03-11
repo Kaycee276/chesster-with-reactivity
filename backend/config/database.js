@@ -37,6 +37,7 @@ db.exec(`
     escrow_resolve_tx TEXT,
     time_control_seconds INTEGER DEFAULT 600,
     turn_started_at TEXT,
+    game_started_at TEXT,
     created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
@@ -60,5 +61,8 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_moves_game ON moves(game_id, move_number);
 `);
+
+// Migrations for existing databases
+try { db.exec("ALTER TABLE games ADD COLUMN game_started_at TEXT"); } catch (_) {}
 
 module.exports = db;
