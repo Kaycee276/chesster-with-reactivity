@@ -168,8 +168,6 @@ function ChessBoardInner() {
 	const wagerAmount = useGameStore((s) => s.wagerAmount);
 	const tokenAddress = useGameStore((s) => s.tokenAddress);
 	const escrowStatus = useGameStore((s) => s.escrowStatus);
-	const escrowCreateTx = useGameStore((s) => s.escrowCreateTx);
-	const escrowJoinTx = useGameStore((s) => s.escrowJoinTx);
 	const escrowResolveTx = useGameStore((s) => s.escrowResolveTx);
 
 	// Pot = each player's stake × 2 (only meaningful once both joined)
