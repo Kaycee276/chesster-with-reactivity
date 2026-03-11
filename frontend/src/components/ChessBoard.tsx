@@ -1,5 +1,7 @@
-import { useGameStore, useGameNotifications } from "../store/gameStore";
+import { useGameStore, useGameNotifications, useSoundEffects } from "../store/gameStore";
 import { useToastStore } from "../store/toastStore";
+import { soundService } from "../services/soundService";
+import { friendlyError } from "../utils/errorMessages";
 import {
 	Copy,
 	Check,
@@ -12,6 +14,8 @@ import {
 	Loader2,
 	CheckCircle2,
 	X,
+	Volume2,
+	VolumeX,
 } from "lucide-react";
 
 const WETH_SEPOLIA = "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14";
@@ -21,10 +25,11 @@ function tokenLabel(addr: string): string {
 	if (addr.toLowerCase() === WETH_SEPOLIA.toLowerCase()) return "WETH";
 	return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { getPossibleMoves, getCapturedPieces } from "../utils/chessUtils";
 import PromotionModal from "./PromotionModal";
+import ConfirmModal from "./ConfirmModal";
 import TurnTimer from "./TurnTimer";
 
 const PIECE_SYMBOLS: Record<string, string> = {
@@ -56,53 +61,36 @@ const BLACK_PIECE_STYLE: React.CSSProperties = {
 	WebkitTextStroke: "0.5px #fff",
 };
 
-// Board occupies the smaller of: (viewport width − 8px), (viewport height − 10rem), capped at 600px
-const BOARD_SIZE = "min(calc(100vw - 8px), calc(100svh - 10rem), 600px)";
-
 // ── Skeleton shown while game state loads ─────────────────────────────────────
 function BoardSkeleton() {
 	return (
-		<div className="h-svh w-screen overflow-hidden flex flex-col items-center justify-center bg-(--bg) select-none p-1 gap-1.5">
-			{/* Opponent info bar skeleton */}
-			<div
-				className="h-11 rounded-xl bg-(--bg-secondary) animate-pulse shrink-0"
-				style={{ width: BOARD_SIZE }}
-			/>
-			{/* Board skeleton */}
-			<div
-				className="rounded-sm overflow-hidden shadow-2xl shrink-0"
-				style={{ width: BOARD_SIZE, height: BOARD_SIZE }}
-			>
-				<div
-					style={{
-						display: "grid",
-						gridTemplateColumns: "repeat(8, 1fr)",
-						gridTemplateRows: "repeat(8, 1fr)",
-						height: "100%",
-					}}
-				>
-					{Array.from({ length: 64 }).map((_, i) => (
-						<div
-							key={i}
-							className={`animate-pulse ${
-								(Math.floor(i / 8) + (i % 8)) % 2 === 0
-									? "bg-(--accent-light)/30"
-									: "bg-(--accent-dark)/70"
-							}`}
-						/>
-					))}
+		<div className="h-dvh w-dvw overflow-hidden flex flex-col bg-(--bg) select-none p-1 gap-1">
+			<div className="h-10 rounded-xl bg-(--bg-secondary) animate-pulse shrink-0" />
+			<div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+				<div className="aspect-square h-full max-w-full rounded-sm overflow-hidden shadow-2xl">
+					<div
+						className="w-full h-full"
+						style={{
+							display: "grid",
+							gridTemplateColumns: "repeat(8, 1fr)",
+							gridTemplateRows: "repeat(8, 1fr)",
+						}}
+					>
+						{Array.from({ length: 64 }).map((_, i) => (
+							<div
+								key={i}
+								className={`animate-pulse ${
+									(Math.floor(i / 8) + (i % 8)) % 2 === 0
+										? "bg-(--accent-light)/30"
+										: "bg-(--accent-dark)/70"
+								}`}
+							/>
+						))}
+					</div>
 				</div>
 			</div>
-			{/* Player info bar skeleton */}
-			<div
-				className="h-11 rounded-xl bg-(--bg-secondary) animate-pulse shrink-0"
-				style={{ width: BOARD_SIZE }}
-			/>
-			{/* Action bar skeleton */}
-			<div
-				className="h-10 rounded-xl bg-(--bg-secondary) animate-pulse shrink-0"
-				style={{ width: BOARD_SIZE }}
-			/>
+			<div className="h-10 rounded-xl bg-(--bg-secondary) animate-pulse shrink-0" />
+			<div className="h-10 rounded-xl bg-(--bg-secondary) animate-pulse shrink-0" />
 		</div>
 	);
 }
@@ -139,6 +127,38 @@ function ChessBoardInner() {
 		to: [number, number];
 	} | null>(null);
 	const [showPayoutModal, setShowPayoutModal] = useState(false);
+	const [confirmAction, setConfirmAction] = useState<"resign" | "leave" | null>(null);
+	const [soundEnabled, setSoundEnabled] = useState(() => soundService.isEnabled());
+
+	// ── Piece move animation ───────────────────────────────────────────────────
+	const lastMove = useGameStore((s) => s.lastMove);
+	const [animKey, setAnimKey] = useState<string | null>(null);
+	const [animOffset, setAnimOffset] = useState({ dx: 0, dy: 0 });
+	const prevLastMoveRef = useRef<typeof lastMove>(null);
+
+	useEffect(() => {
+		if (!lastMove) return;
+		const prev = prevLastMoveRef.current;
+		if (
+			prev &&
+			prev.from[0] === lastMove.from[0] &&
+			prev.from[1] === lastMove.from[1] &&
+			prev.to[0] === lastMove.to[0] &&
+			prev.to[1] === lastMove.to[1]
+		)
+			return;
+		prevLastMoveRef.current = lastMove;
+
+		// Compute how many squares the piece travelled, accounting for board flip
+		const factor = playerColor === "black" ? -1 : 1;
+		const dy = (lastMove.from[0] - lastMove.to[0]) * factor;
+		const dx = (lastMove.from[1] - lastMove.to[1]) * factor;
+
+		setAnimOffset({ dx, dy });
+		setAnimKey(`${lastMove.to[0]}-${lastMove.to[1]}`);
+		const t = setTimeout(() => setAnimKey(null), 350);
+		return () => clearTimeout(t);
+	}, [lastMove, playerColor]);
 
 	const inCheck = useGameStore((s) => s.inCheck);
 	const winner = useGameStore((s) => s.winner);
@@ -170,6 +190,7 @@ function ChessBoardInner() {
 	);
 
 	useGameNotifications();
+	useSoundEffects();
 
 	// Auto-open payout modal when the game ends and this player is due a payout
 	useEffect(() => {
@@ -187,14 +208,24 @@ function ChessBoardInner() {
 		possibleMoves.some(([r, c]) => r === row && c === col);
 
 	const handleLeaveGame = () => {
-		leaveGame();
-		navigate("/");
+		if (status === "active") {
+			setConfirmAction("leave");
+		} else {
+			leaveGame();
+			navigate("/");
+		}
 	};
 
-	const handleResign = async () => {
-		if (confirm("Are you sure you want to resign?")) {
+	const handleResign = () => setConfirmAction("resign");
+
+	const handleConfirm = async () => {
+		if (confirmAction === "resign") {
 			await resignGame();
+		} else if (confirmAction === "leave") {
+			leaveGame();
+			navigate("/");
 		}
+		setConfirmAction(null);
 	};
 
 	const handleOfferDraw = async () => {
@@ -251,11 +282,7 @@ function ChessBoardInner() {
 			try {
 				await makeMove(selectedSquare, [row, col]);
 			} catch (error: unknown) {
-				if (error instanceof Error) {
-					addToast(error.message, "error");
-				} else {
-					addToast("Something went wrong", "error");
-				}
+				addToast(friendlyError(error), "error");
 				selectSquare(null);
 			} finally {
 				removeToast(toastId);
@@ -271,9 +298,7 @@ function ChessBoardInner() {
 		try {
 			await makeMove(promotionMove.from, promotionMove.to, piece);
 		} catch (error: unknown) {
-			if (error instanceof Error) {
-				addToast(error.message, "error");
-			}
+			addToast(friendlyError(error), "error");
 		} finally {
 			removeToast(toastId);
 			setIsMoving(false);
@@ -292,6 +317,19 @@ function ChessBoardInner() {
 			(playerColor === "black" && piece === piece.toLowerCase())
 		);
 	};
+
+	// ── Dynamic board sizing via ResizeObserver ───────────────────────────────
+	const boardWrapperRef = useRef<HTMLDivElement>(null);
+	const [boardPx, setBoardPx] = useState(0);
+	useEffect(() => {
+		const el = boardWrapperRef.current;
+		if (!el) return;
+		const update = () => setBoardPx(Math.min(el.clientWidth, el.clientHeight));
+		const obs = new ResizeObserver(update);
+		obs.observe(el);
+		update();
+		return () => obs.disconnect();
+	}, []);
 
 	const displayBoard =
 		playerColor === "black"
@@ -314,9 +352,23 @@ function ChessBoardInner() {
 	);
 
 	return (
-		<div className="h-svh w-screen overflow-hidden flex flex-col items-center justify-center bg-(--bg) select-none p-1 gap-1.5">
+		<div className="h-dvh w-dvw overflow-hidden flex flex-col bg-(--bg) select-none p-1 gap-1">
 			{promotionMove && (
 				<PromotionModal onSelect={handlePromotion} color={playerColor!} />
+			)}
+
+			{confirmAction && (
+				<ConfirmModal
+					title={confirmAction === "resign" ? "Resign game?" : "Leave game?"}
+					message={
+						confirmAction === "resign"
+							? "Your opponent will be declared the winner. This cannot be undone."
+							: "You will forfeit the game and your opponent wins. Are you sure?"
+					}
+					confirmLabel={confirmAction === "resign" ? "Resign" : "Leave"}
+					onConfirm={handleConfirm}
+					onCancel={() => setConfirmAction(null)}
+				/>
 			)}
 
 			{/* ── Payout Modal ── */}
@@ -402,40 +454,38 @@ function ChessBoardInner() {
 				</div>
 			)}
 
-			{/* ── Opponent Info Bar ── */}
-			<div
-				className="flex items-center justify-between px-3 py-2 rounded-xl bg-(--bg-secondary) border border-(--border) shrink-0"
-				style={{ width: BOARD_SIZE }}
-			>
-				<div className="flex items-center gap-2 min-w-0">
+			{/* ── Opponent Bar ── */}
+			<div className="shrink-0 flex items-center justify-between px-3 h-10 rounded-xl bg-(--bg-secondary) border border-(--border) min-w-0 gap-2 overflow-hidden">
+				<div className="flex items-center gap-2 min-w-0 overflow-hidden">
 					<PlayerAvatar color={opponentColor as "white" | "black"} />
 					<span className="text-xs font-semibold uppercase tracking-wider text-(--text-secondary) truncate">
 						Opponent · {opponentColor}
 					</span>
 				</div>
-				<div className="flex items-center gap-2 shrink-0">
-					{status === "active" && isMyTurn && (
-						<span className="text-xs text-(--text-tertiary) italic">
-							thinking…
-						</span>
-					)}
-				</div>
+				{status === "active" && isMyTurn && (
+					<span className="text-xs text-(--text-tertiary) italic shrink-0">thinking…</span>
+				)}
 			</div>
 
-			{/* ── Chess Board ── */}
+			{/* ── Board (fills remaining height) ── */}
 			<div
-				className={`shrink-0 rounded-sm overflow-hidden shadow-2xl relative transition-opacity ${isMoving ? "opacity-70" : "opacity-100"}`}
-				style={
-					{
-						width: BOARD_SIZE,
-						height: BOARD_SIZE,
-						display: "grid",
-						gridTemplateColumns: "repeat(8, 1fr)",
-						gridTemplateRows: "repeat(8, 1fr)",
-						"--board-size": BOARD_SIZE,
-					} as React.CSSProperties
-				}
+				ref={boardWrapperRef}
+				className="flex-1 min-h-0 min-w-0 flex items-center justify-center overflow-hidden"
 			>
+				{boardPx > 0 && (
+				<div
+					className={`rounded-sm overflow-hidden shadow-2xl transition-opacity ${isMoving ? "opacity-70" : "opacity-100"}`}
+					style={
+						{
+							width: boardPx,
+							height: boardPx,
+							display: "grid",
+							gridTemplateColumns: "repeat(8, 1fr)",
+							gridTemplateRows: "repeat(8, 1fr)",
+							"--board-size": `${boardPx}px`,
+						} as React.CSSProperties
+					}
+				>
 				{displayBoard.map((row, rowIndex) =>
 					row.map((piece, colIndex) => {
 						const actualRow = playerColor === "black" ? 7 - rowIndex : rowIndex;
@@ -453,6 +503,13 @@ function ChessBoardInner() {
 							isPlayerPiece(piece) &&
 							status === "active" &&
 							!selected;
+						const isLastMoveSquare =
+							!selected &&
+							!isKingInCheck &&
+							lastMove &&
+							((actualRow === lastMove.from[0] && actualCol === lastMove.from[1]) ||
+								(actualRow === lastMove.to[0] && actualCol === lastMove.to[1]));
+						const isPieceAnimating = animKey === `${actualRow}-${actualCol}`;
 
 						return (
 							<div
@@ -461,7 +518,9 @@ function ChessBoardInner() {
 									isLight ? "bg-(--accent-light)/90" : "bg-(--accent-dark)"
 								} ${selected ? "bg-yellow-400/75" : ""} ${
 									isKingInCheck ? "bg-red-500/80" : ""
-								} ${highlight ? " outline-2 outline-yellow-300/60 -outline-offset-2" : ""}`}
+								} ${isLastMoveSquare ? "bg-yellow-300/45" : ""} ${
+									highlight ? " outline-2 outline-yellow-300/60 -outline-offset-2" : ""
+								}`}
 								onClick={() => handleSquareClick(actualRow, actualCol)}
 							>
 								{/* Possible-move dot */}
@@ -477,13 +536,19 @@ function ChessBoardInner() {
 								{/* Piece */}
 								{piece !== "." && (
 									<span
+										key={isPieceAnimating ? "anim" : "static"}
 										className="leading-none pointer-events-none"
 										style={{
 											fontSize: "calc(var(--board-size) / 8 * 0.72)",
 											...(piece === piece.toUpperCase()
 												? WHITE_PIECE_STYLE
 												: BLACK_PIECE_STYLE),
-										}}
+											...(isPieceAnimating && {
+												animation: "pieceSlide 0.3s ease-out forwards",
+												"--piece-dx": `calc(${animOffset.dx} * var(--board-size) / 8)`,
+												"--piece-dy": `calc(${animOffset.dy} * var(--board-size) / 8)`,
+											}),
+										} as React.CSSProperties}
 									>
 										{PIECE_SYMBOLS[piece]}
 									</span>
@@ -492,30 +557,26 @@ function ChessBoardInner() {
 						);
 					}),
 				)}
+				</div>
+				)}
 			</div>
 
-			{/* ── Player Info Bar ── */}
-			<div
-				className="flex items-center justify-between px-3 py-2 rounded-xl bg-(--bg-secondary) border border-(--border) shrink-0"
-				style={{ width: BOARD_SIZE }}
-			>
-				<div className="flex items-center gap-2 min-w-0">
+			{/* ── Player Bar ── */}
+			<div className="shrink-0 flex items-center justify-between px-3 h-10 rounded-xl bg-(--bg-secondary) border border-(--border) min-w-0 gap-2 overflow-hidden">
+				<div className="flex items-center gap-2 min-w-0 overflow-hidden">
 					<PlayerAvatar color={playerColor as "white" | "black"} />
 					<span className="text-xs font-semibold uppercase tracking-wider truncate">
 						You · {playerColor}
 					</span>
-					{/* Captured pieces */}
 					{capturedByCurrentPlayer.length > 0 && (
-						<div className="flex overflow-hidden max-w-25 shrink-0">
+						<div className="flex overflow-hidden shrink-0" style={{ maxWidth: "6rem" }}>
 							{capturedByCurrentPlayer.map((p, i) => (
 								<span
 									key={i}
 									className="leading-none"
 									style={{
-										fontSize: "0.8rem",
-										...(p === p.toUpperCase()
-											? WHITE_PIECE_STYLE
-											: BLACK_PIECE_STYLE),
+										fontSize: "0.75rem",
+										...(p === p.toUpperCase() ? WHITE_PIECE_STYLE : BLACK_PIECE_STYLE),
 									}}
 								>
 									{PIECE_SYMBOLS[p]}
@@ -532,134 +593,27 @@ function ChessBoardInner() {
 						</span>
 					)}
 					{status === "active" && !isMyTurn && (
-						<span className="text-xs text-(--text-tertiary) italic">
-							your turn next
-						</span>
+						<span className="text-xs text-(--text-tertiary) italic">your turn next</span>
 					)}
 					{status === "finished" && (
 						<span className="font-bold text-(--info) uppercase text-xs tracking-wide">
-							{winner === "draw"
-								? "Draw!"
-								: winner === playerColor
-									? "You win!"
-									: "You lose"}
+							{winner === "draw" ? "Draw!" : winner === playerColor ? "You win!" : "You lose"}
 						</span>
 					)}
 				</div>
 			</div>
 
-			{/* ── Escrow TX Links (wagered games only) ── */}
-			{wagerAmount && (
-				<div
-					className={`flex items-center gap-2 px-3 py-2 rounded-xl border shrink-0 flex-wrap ${
-						escrowStatus === "failed"
-							? "bg-red-500/10 border-red-500/30"
-							: "bg-(--bg-secondary) border-(--border)"
-					}`}
-					style={{ width: BOARD_SIZE }}
-				>
-					{escrowStatus === "failed" ? (
-						<span className="flex items-center gap-1 text-xs text-red-400 font-semibold">
-							<AlertTriangle size={10} />
-							Escrow failed — contact support
-						</span>
-					) : (
-						<>
-							{/* Sending / sent tokens feedback — shown only to recipients */}
-							{status === "finished" &&
-								willReceiveTokens &&
-								(escrowResolveTx ? (
-									<span className="flex items-center gap-1.5 text-xs text-green-400 font-semibold w-full">
-										<CheckCircle2 size={12} className="shrink-0" />
-										{winner === "draw" ? "Wager returned" : "Tokens sent"}
-										{" · "}
-										<a
-											href={`${EXPLORER_BASE}${escrowResolveTx}`}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="flex items-center gap-0.5 hover:underline font-normal"
-										>
-											<ExternalLink size={10} />
-											View tx
-										</a>
-									</span>
-								) : (
-									<span className="flex items-center gap-1.5 text-xs text-yellow-400 font-medium w-full">
-										<Loader2 size={12} className="animate-spin shrink-0" />
-										{winner === "draw"
-											? "Returning your wager…"
-											: "Sending tokens to you…"}
-									</span>
-								))}
-
-							{/* TX links row */}
-							{escrowCreateTx || escrowJoinTx || escrowResolveTx ? (
-								<>
-									<span className="text-xs text-(--text-tertiary) shrink-0">
-										{escrowStatus === "settled" ? "Settled ·" : "Escrow ·"}
-									</span>
-									{escrowCreateTx && (
-										<a
-											href={`${EXPLORER_BASE}${escrowCreateTx}`}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="flex items-center gap-1 text-xs text-(--accent-primary) hover:underline shrink-0"
-										>
-											<ExternalLink size={10} />
-											Create
-										</a>
-									)}
-									{escrowJoinTx && (
-										<a
-											href={`${EXPLORER_BASE}${escrowJoinTx}`}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="flex items-center gap-1 text-xs text-(--accent-primary) hover:underline shrink-0"
-										>
-											<ExternalLink size={10} />
-											Join
-										</a>
-									)}
-									{escrowResolveTx && (
-										<a
-											href={`${EXPLORER_BASE}${escrowResolveTx}`}
-											target="_blank"
-											rel="noopener noreferrer"
-											className="flex items-center gap-1 text-xs text-green-400 hover:underline shrink-0 font-semibold"
-										>
-											<ExternalLink size={10} />
-											Settle
-										</a>
-									)}
-								</>
-							) : (
-								!(status === "finished" && willReceiveTokens) && (
-									<span className="text-xs text-(--text-tertiary)">
-										{escrowStatus === "active"
-											? "Escrow active"
-											: "Escrow pending…"}
-									</span>
-								)
-							)}
-						</>
-					)}
-				</div>
-			)}
-
 			{/* ── Action Bar ── */}
-			<div
-				className="flex items-center justify-between px-3 py-2 rounded-xl bg-(--bg-secondary) border border-(--border) gap-2 shrink-0"
-				style={{ width: BOARD_SIZE }}
-			>
-				{/* Game actions */}
-				<div className="flex items-center gap-1.5">
+			<div className="shrink-0 flex items-center justify-between px-2.5 h-10 rounded-xl bg-(--bg-secondary) border border-(--border) gap-1.5 min-w-0 overflow-hidden">
+				{/* Left: game actions */}
+				<div className="flex items-center gap-1 shrink-0">
 					{status === "finished" ? (
 						<button
 							onClick={handleLeaveGame}
 							className="px-3 py-1.5 bg-(--accent-dark) hover:bg-(--accent-primary) text-white rounded-lg flex items-center gap-1.5 text-xs font-semibold transition-colors"
 						>
 							<LogOut size={11} />
-							Leave game
+							Leave
 						</button>
 					) : status === "active" ? (
 						<>
@@ -692,31 +646,52 @@ function ChessBoardInner() {
 					) : null}
 				</div>
 
-				{/* Shared game timer */}
+				{/* Centre: timer */}
 				{status === "active" && (
-					<TurnTimer
-						secondsLeft={secondsLeft}
-						totalSeconds={timeControlSeconds}
-					/>
+					<TurnTimer secondsLeft={secondsLeft} totalSeconds={timeControlSeconds} />
 				)}
 
-				{/* Right side: stake badge + game code */}
-				<div className="flex items-center gap-1.5 shrink-0">
-					{potDisplay && (
-						<div
-							title="Total pot locked in escrow"
-							className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
-								status === "finished" &&
-								winner !== "draw" &&
-								winner === playerColor
-									? "bg-green-500/15 border-green-500/30 text-green-400"
-									: "bg-yellow-500/10 border-yellow-500/25 text-yellow-400"
-							}`}
-						>
-							<Lock size={9} />
-							{potDisplay}
-						</div>
+				{/* Right: escrow badge · sound · game code */}
+				<div className="flex items-center gap-1 shrink-0 ml-auto">
+					{/* Escrow status badge (wagered games only) — replaces the old separate row */}
+					{wagerAmount && (
+						escrowStatus === "failed" ? (
+							<span className="flex items-center gap-1 text-xs text-red-400 font-semibold">
+								<AlertTriangle size={9} />
+								<span className="hidden sm:inline">Escrow failed</span>
+							</span>
+						) : escrowStatus === "settled" ? (
+							<a
+								href={escrowResolveTx ? `${EXPLORER_BASE}${escrowResolveTx}` : undefined}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="flex items-center gap-1 text-xs text-green-400 font-semibold"
+							>
+								<CheckCircle2 size={9} />
+								<span className="hidden sm:inline">Settled</span>
+							</a>
+						) : willReceiveTokens ? (
+							<span className="flex items-center gap-1 text-xs text-yellow-400">
+								<Loader2 size={9} className="animate-spin" />
+								<span className="hidden sm:inline">Sending…</span>
+							</span>
+						) : (
+							<span
+								title={`Total pot: ${potDisplay}`}
+								className="flex items-center gap-1 text-xs text-yellow-400/80 border border-yellow-500/25 rounded-md px-1.5 py-0.5"
+							>
+								<Lock size={8} />
+								{potDisplay}
+							</span>
+						)
 					)}
+					<button
+						onClick={() => setSoundEnabled(soundService.toggle())}
+						title={soundEnabled ? "Mute sounds" : "Unmute sounds"}
+						className="p-1.5 rounded-lg text-(--text-tertiary) hover:text-(--text) hover:bg-(--bg-tertiary) transition-colors"
+					>
+						{soundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+					</button>
 					<button
 						onClick={copyGameCode}
 						disabled={!gameCode}

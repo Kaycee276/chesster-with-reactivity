@@ -9,6 +9,7 @@ import {
 } from "@reown/appkit/react";
 import { ethers } from "ethers";
 import ChessBoard from "../components/ChessBoard";
+import { friendlyError } from "../utils/errorMessages";
 
 const ESCROW_ADDRESS = import.meta.env.VITE_ESCROW_CONTRACT_ADDRESS || "";
 const ESCROW_ETH_ABI = [
@@ -122,13 +123,7 @@ export default function GamePage() {
 				await tx.wait();
 			} catch (err: unknown) {
 				setJoinStep("idle");
-				const msg = err instanceof Error ? err.message : "Deposit failed";
-				addToast(
-					msg.includes("rejected") || msg.includes("denied")
-						? "Deposit cancelled"
-						: msg,
-					"error",
-				);
+				addToast(friendlyError(err, "Deposit failed."), "error");
 				return;
 			}
 		}
@@ -138,8 +133,7 @@ export default function GamePage() {
 			await joinGame(gameCode, "black", address);
 		} catch (err: unknown) {
 			setJoinStep("idle");
-			const msg = err instanceof Error ? err.message : "Something went wrong";
-			addToast(msg, "error");
+			addToast(friendlyError(err), "error");
 		}
 	};
 

@@ -7,6 +7,7 @@ import type { ContractGame } from "../api/reactivity";
 import { useToastStore } from "./toastStore";
 import { getCapturedPieces } from "../utils/chessUtils";
 import type { GameState } from "../types/game";
+import { soundService } from "../services/soundService";
 
 // ── Module-level local countdown timer ────────────────────────────────────────
 let _timerInterval: ReturnType<typeof setInterval> | null = null;
@@ -210,6 +211,13 @@ export const useGameStore = create<GameStore>()(
         const data = await api.getGame(code);
         if (data.success) {
           const tcs = data.data.time_control_seconds ?? 600;
+          let secondsLeft = tcs;
+          if (data.data.status === "active" && data.data.game_started_at) {
+            const elapsed = Math.floor(
+              (Date.now() - new Date(data.data.game_started_at).getTime()) / 1000,
+            );
+            secondsLeft = Math.max(0, tcs - elapsed);
+          }
           set({
             gameCode: code,
             board: data.data.board_state,
@@ -217,9 +225,10 @@ export const useGameStore = create<GameStore>()(
             status: data.data.status,
             inCheck: data.data.in_check ?? false,
             winner: data.data.winner ?? null,
+            endReason: data.data.end_reason ?? null,
             drawOffer: data.data.draw_offer ?? null,
             turnStartedAt: data.data.turn_started_at ?? null,
-            secondsLeft: tcs,
+            secondsLeft,
             timeControlSeconds: tcs,
             capturedWhite: data.data.captured_white ?? [],
             capturedBlack: data.data.captured_black ?? [],
@@ -250,11 +259,18 @@ export const useGameStore = create<GameStore>()(
         if (data.success) {
           const tcs = data.data.time_control_seconds ?? 600;
           const nextStatus = data.data.status;
-
-          // While game is actively running, do NOT reset the live countdown —
-          // only update board/turn/state fields so opponent moves appear.
-          const isActivePolling = nextStatus === "active" && prevStatus === "active";
           const isTransitionToActive = nextStatus === "active" && prevStatus === "waiting";
+
+          // Single source of truth for the timer: game_started_at (set once
+          // when both players join, never resets on moves). Both clients
+          // compute the same secondsLeft from the same origin timestamp.
+          let secondsLeft = get().secondsLeft;
+          if (nextStatus === "active" && data.data.game_started_at) {
+            const elapsed = Math.floor(
+              (Date.now() - new Date(data.data.game_started_at).getTime()) / 1000,
+            );
+            secondsLeft = Math.max(0, tcs - elapsed);
+          }
 
           set({
             board: data.data.board_state,
@@ -262,6 +278,7 @@ export const useGameStore = create<GameStore>()(
             status: nextStatus,
             inCheck: data.data.in_check ?? false,
             winner: data.data.winner ?? null,
+            endReason: data.data.end_reason ?? null,
             drawOffer: data.data.draw_offer ?? null,
             turnStartedAt: data.data.turn_started_at ?? null,
             capturedWhite: data.data.captured_white ?? [],
@@ -273,23 +290,11 @@ export const useGameStore = create<GameStore>()(
             escrowCreateTx: data.data.escrow_create_tx ?? null,
             escrowJoinTx: data.data.escrow_join_tx ?? null,
             escrowResolveTx: data.data.escrow_resolve_tx ?? null,
-            // Only update timer config when not actively polling mid-game
-            ...(!isActivePolling && { secondsLeft: tcs, timeControlSeconds: tcs }),
+            secondsLeft,
+            timeControlSeconds: tcs,
           });
 
           if (isTransitionToActive) {
-            // Seed timer with elapsed time since game started.
-            // turn_started_at is set to now when both players join, so it
-            // accurately reflects how long ago the game actually began.
-            const turnStartedAt = data.data.turn_started_at;
-            let secondsLeft = tcs;
-            if (turnStartedAt) {
-              const elapsed = Math.floor(
-                (Date.now() - new Date(turnStartedAt).getTime()) / 1000,
-              );
-              secondsLeft = Math.max(0, tcs - elapsed);
-            }
-            set({ secondsLeft, timeControlSeconds: tcs });
             startLocalTimer();
             subscribeReactivity(gameCode).catch(() => {});
           }
@@ -380,7 +385,11 @@ export const useGameStore = create<GameStore>()(
         const data = await api.acceptDraw(gameCode);
         if (data.success) {
           stopLocalTimer();
-          set({ status: data.data.status });
+          set({
+            status: data.data.status,
+            winner: data.data.winner ?? null,
+            endReason: data.data.end_reason ?? null,
+          });
         }
       },
 
@@ -514,4 +523,63 @@ export const useGameNotifications = () => {
     }
     prevStatusRef.current = status;
   }, [status, addToast]);
+};
+
+// ── Sound effects hook ────────────────────────────────────────────────────────
+export const useSoundEffects = () => {
+  const lastMove      = useGameStore((s) => s.lastMove);
+  const capturedWhite = useGameStore((s) => s.capturedWhite);
+  const capturedBlack = useGameStore((s) => s.capturedBlack);
+  const status        = useGameStore((s) => s.status);
+  const inCheck       = useGameStore((s) => s.inCheck);
+
+  const prevCapturedRef = useRef(0);
+  const prevStatusRef   = useRef(status);
+  const prevInCheckRef  = useRef(false);
+
+  // Move / capture / castle / promote sounds
+  useEffect(() => {
+    if (!lastMove) return;
+
+    const totalCaptured =
+      (capturedWhite?.length ?? 0) + (capturedBlack?.length ?? 0);
+    const wasCapture = totalCaptured > prevCapturedRef.current;
+    prevCapturedRef.current = totalCaptured;
+
+    const isCastle =
+      lastMove.piece.toLowerCase() === "k" &&
+      Math.abs(lastMove.to[1] - lastMove.from[1]) === 2;
+    const isPromotion =
+      lastMove.piece.toLowerCase() === "p" &&
+      (lastMove.to[0] === 0 || lastMove.to[0] === 7);
+
+    if (isPromotion)   soundService.promote();
+    else if (isCastle) soundService.castle();
+    else if (wasCapture) soundService.capture();
+    else soundService.move();
+  }, [lastMove]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Check sound — only on transition to in-check
+  useEffect(() => {
+    if (inCheck && !prevInCheckRef.current && status === "active") {
+      soundService.check();
+    }
+    prevInCheckRef.current = !!inCheck;
+  }, [inCheck, status]);
+
+  // Game start / end sounds
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    if (prev === "waiting" && status === "active") {
+      soundService.gameStart();
+    }
+    if (prev === "active" && status === "finished") {
+      const winner = useGameStore.getState().winner;
+      setTimeout(() => {
+        if (winner === "draw") soundService.draw();
+        else soundService.gameEnd();
+      }, 300);
+    }
+    prevStatusRef.current = status;
+  }, [status]);
 };
