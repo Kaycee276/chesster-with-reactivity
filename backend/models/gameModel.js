@@ -140,7 +140,19 @@ class GameModel {
 	async getGame(gameCode) {
 		const row = db.prepare("SELECT * FROM games WHERE game_code = ?").get(gameCode);
 		if (!row) return null;
-		return parseGame(row);
+		const game = parseGame(row);
+
+		// Auto-cancel waiting games that have been open for over 1 hour.
+		// Checked on every poll so the creator is notified promptly even if
+		// no one visits the lobby to trigger getPendingGames().
+		if (game.status === "waiting") {
+			const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+			if (game.created_at < oneHourAgo) {
+				return updateAndFetch({ status: "cancelled" }, gameCode);
+			}
+		}
+
+		return game;
 	}
 
 	async getPendingGames() {
@@ -247,11 +259,15 @@ class GameModel {
 			if (winner === "draw") {
 				receipt = await escrowService.resolveAsDraw(gameCode);
 			} else {
-				const winnerAddress =
-					winner === "white" ? dbGame.player_white_address : dbGame.player_black_address;
+				// Use the on-chain player addresses (from getMatch above) rather than
+				// the DB addresses. The contract's resolveMatch checks
+				// `winner == m.player1 || winner == m.player2`, so using the exact
+				// addresses already stored on-chain eliminates any mismatch revert.
+				// player1 = createMatch caller = white, player2 = joinMatch caller = black.
+				const winnerAddress = winner === "white" ? onChain.player1 : onChain.player2;
 
-				if (!winnerAddress) {
-					console.error(`[Escrow] ${gameCode} — no address found for winner="${winner}"`);
+				if (!winnerAddress || winnerAddress === "0x0000000000000000000000000000000000000000") {
+					console.error(`[Escrow] ${gameCode} — no on-chain address for winner="${winner}"`);
 					setEscrowStatus(gameCode, "failed");
 					return;
 				}

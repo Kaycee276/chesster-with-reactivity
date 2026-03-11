@@ -1,5 +1,5 @@
 .claude
-./dev.sh
+dev.sh
 backend/chesster.db
 backend/chesster.db-shm
 backend/chesster.db-wal

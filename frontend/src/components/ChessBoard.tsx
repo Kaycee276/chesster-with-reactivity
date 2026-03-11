@@ -19,9 +19,10 @@ import {
 } from "lucide-react";
 
 const WETH_SEPOLIA = "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14";
-const EXPLORER_BASE = "https://sepolia.etherscan.io/tx/";
+const EXPLORER_BASE = "https://shannon-explorer.somnia.network/tx/";
 
-function tokenLabel(addr: string): string {
+function tokenLabel(addr: string | null | undefined): string {
+	if (!addr) return "STT";
 	if (addr.toLowerCase() === WETH_SEPOLIA.toLowerCase()) return "WETH";
 	return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
@@ -172,7 +173,7 @@ function ChessBoardInner() {
 
 	// Pot = each player's stake × 2 (only meaningful once both joined)
 	const potDisplay =
-		wagerAmount && tokenAddress
+		wagerAmount
 			? `${parseFloat(String(wagerAmount)) * 2} ${tokenLabel(tokenAddress)}`
 			: null;
 
@@ -196,6 +197,18 @@ function ChessBoardInner() {
 			setShowPayoutModal(true);
 		}
 	}, [status, willReceiveTokens]);
+
+	// Detect game cancellation (waiting > 1 hour, no opponent joined).
+	// Notify the creator and return them to the lobby automatically.
+	const prevStatusRef = useRef(status);
+	useEffect(() => {
+		if (status === "cancelled") {
+			addToast("Your game was cancelled — no one joined within 1 hour. Your wager (if any) has been refunded.", "info");
+			leaveGame();
+			navigate("/");
+		}
+		prevStatusRef.current = status;
+	}, [status, addToast, leaveGame, navigate]);
 
 	const possibleMoves = useMemo(() => {
 		if (!selectedSquare || !playerColor || status !== "active") return [];
@@ -370,7 +383,7 @@ function ChessBoardInner() {
 			)}
 
 			{/* ── Payout Modal ── */}
-			{showPayoutModal && wagerAmount && tokenAddress && (
+			{showPayoutModal && wagerAmount && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
 					<div className="relative w-full max-w-sm mx-4 bg-(--bg-secondary) border border-(--border) rounded-2xl p-6 flex flex-col gap-5 shadow-2xl">
 						{/* Close button — only after payout is confirmed */}
