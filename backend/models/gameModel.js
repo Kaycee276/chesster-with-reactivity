@@ -125,12 +125,13 @@ class GameModel {
 		const otherField   = playerColor === "white" ? "player_black"         : "player_white";
 		const bothPlayersJoined = game[otherField] === true;
 
+		const now = new Date().toISOString();
 		const fields = {
 			[updateField]:  1,
 			[addressField]: playerAddress,
 			status: bothPlayersJoined ? "active" : "waiting",
 			escrow_status: bothPlayersJoined && game.wager_amount ? "active" : game.escrow_status,
-			...(bothPlayersJoined ? { turn_started_at: new Date().toISOString() } : {}),
+			...(bothPlayersJoined ? { turn_started_at: now, game_started_at: now } : {}),
 		};
 
 		return updateAndFetch(fields, gameCode);
