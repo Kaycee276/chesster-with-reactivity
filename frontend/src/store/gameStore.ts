@@ -103,7 +103,7 @@ async function subscribeReactivity(gameCode: string) {
   await reactivityService.subscribeToGame(
     gameCode,
     (contractGame: ContractGame) => {
-      const { timeControlSeconds } = useGameStore.getState();
+      const { timeControlSeconds, status: prevStatus } = useGameStore.getState();
       const winner = addrToColor(
         contractGame.winner,
         contractGame.playerWhite,
@@ -117,10 +117,17 @@ async function subscribeReactivity(gameCode: string) {
       const capturedWhite = getCapturedPieces(contractGame.board, "white");
       const capturedBlack = getCapturedPieces(contractGame.board, "black");
 
+      // Map contract "pending" back to "waiting" so the WaitingScreen stays
+      // visible until the contract confirms activation.
+      const nextStatus =
+        contractGame.status === "pending" && prevStatus === "waiting"
+          ? "waiting"
+          : contractGame.status;
+
       useGameStore.setState({
         board: contractGame.board,
         currentTurn: contractGame.currentTurn,
-        status: contractGame.status,
+        status: nextStatus,
         inCheck: contractGame.inCheck,
         winner: winner ?? null,
         endReason: contractGame.endReason || null,
@@ -135,6 +142,10 @@ async function subscribeReactivity(gameCode: string) {
           secondsLeft: Math.max(0, timeControlSeconds - elapsed),
         });
         startLocalTimer();
+        // Fetch DB fields (wager, escrow, etc.) on the waiting → active transition
+        if (prevStatus === "waiting") {
+          useGameStore.getState().fetchGameState().catch(() => {});
+        }
       }
 
       if (contractGame.status === "finished") {
