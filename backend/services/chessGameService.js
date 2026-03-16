@@ -31,6 +31,37 @@ let provider = null;
 let wallet   = null;
 let contract = null;
 let ready    = false;
+let nonce    = null;
+let txQueue  = Promise.resolve();
+
+const RETRY_DELAYS = [1000, 3000, 6000]; // ms between retries
+
+/** Serialize all write calls through a single queue with a managed nonce + retry. */
+function enqueue(fn) {
+  txQueue = txQueue.then(async () => {
+    if (nonce === null) nonce = await wallet.getNonce();
+    let lastErr;
+    for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+      try {
+        const tx = await fn(nonce);
+        nonce++;
+        return tx;
+      } catch (err) {
+        lastErr = err;
+        const isNonceErr = err.code === "NONCE_EXPIRED" || err.code === "REPLACEMENT_UNDERPRICED";
+        if (isNonceErr) {
+          nonce = await wallet.getNonce();
+        }
+        if (attempt < RETRY_DELAYS.length) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
+        }
+      }
+    }
+    nonce = await wallet.getNonce(); // final re-sync before giving up
+    throw lastErr;
+  });
+  return txQueue;
+}
 
 function init() {
   if (!CONTRACT) {
@@ -42,7 +73,7 @@ function init() {
     return;
   }
 
-  provider = new ethers.JsonRpcProvider(RPC_URL);
+  provider = new ethers.JsonRpcProvider(RPC_URL, undefined, { polling: true, pollingInterval: 2000, staticNetwork: true, timeout: 30000 });
   wallet   = new ethers.Wallet(COORDINATOR, provider);
   contract = new ethers.Contract(CONTRACT, ABI, wallet);
   ready    = true;
@@ -79,42 +110,45 @@ async function activateGame(gameCode, playerWhiteAddress, playerBlackAddress) {
   if (!ready) return;
   const code = ethers.id(gameCode);
   try {
-    const tx1 = await contract.createGame(code, playerWhiteAddress);
+    if (nonce === null) nonce = await wallet.getNonce();
+    const tx1 = await contract.createGame(code, playerWhiteAddress, { nonce: nonce++ });
     await tx1.wait();
-    const tx2 = await contract.joinGame(code, playerBlackAddress);
+    const tx2 = await contract.joinGame(code, playerBlackAddress, { nonce: nonce++ });
     await tx2.wait();
     console.log(`[ChessGame] ${gameCode} activated on-chain`);
   } catch (err) {
+    nonce = await wallet.getNonce(); // re-sync on failure
     console.error(`[ChessGame] activateGame failed for ${gameCode}:`, err.message);
-    throw err; // propagate so caller can decide to continue anyway
+    throw err;
   }
 }
 
 /** Fire-and-forget: record a validated move on-chain. */
-async function recordMove(gameCode, from, to, board, inCheck) {
+function recordMove(gameCode, from, to, board, inCheck) {
   if (!ready) return;
-  try {
-    const boardBytes = boardToBytes(board);
-    await contract.recordMove(
+  const boardBytes = boardToBytes(board);
+  enqueue((n) =>
+    contract.recordMove(
       ethers.id(gameCode),
       from[0], from[1],
       to[0],   to[1],
       boardBytes,
       inCheck ?? false,
-    );
-  } catch (err) {
-    console.error(`[ChessGame] recordMove failed for ${gameCode}:`, err.message);
-  }
+      { nonce: n },
+    )
+  ).catch((err) =>
+    console.error(`[ChessGame] recordMove failed for ${gameCode}:`, err.message)
+  );
 }
 
 /** Fire-and-forget: record a draw offer on-chain. */
-async function recordDrawOffer(gameCode, offererAddress) {
+function recordDrawOffer(gameCode, offererAddress) {
   if (!ready) return;
-  try {
-    await contract.recordDrawOffer(ethers.id(gameCode), offererAddress || ethers.ZeroAddress);
-  } catch (err) {
-    console.error(`[ChessGame] recordDrawOffer failed for ${gameCode}:`, err.message);
-  }
+  enqueue((n) =>
+    contract.recordDrawOffer(ethers.id(gameCode), offererAddress || ethers.ZeroAddress, { nonce: n })
+  ).catch((err) =>
+    console.error(`[ChessGame] recordDrawOffer failed for ${gameCode}:`, err.message)
+  );
 }
 
 /**
@@ -126,13 +160,12 @@ async function recordDrawOffer(gameCode, offererAddress) {
  */
 async function endGame(gameCode, dbGame, winner, reason) {
   if (!ready) return;
-  try {
-    const winnerAddr = resolveWinnerAddress(winner, dbGame);
-    await contract.endGame(ethers.id(gameCode), winnerAddr, reason || "");
-    console.log(`[ChessGame] ${gameCode} ended on-chain – winner: ${winner}`);
-  } catch (err) {
-    console.error(`[ChessGame] endGame failed for ${gameCode}:`, err.message);
-  }
+  const winnerAddr = resolveWinnerAddress(winner, dbGame);
+  enqueue((n) =>
+    contract.endGame(ethers.id(gameCode), winnerAddr, reason || "", { nonce: n })
+  )
+    .then(() => console.log(`[ChessGame] ${gameCode} ended on-chain – winner: ${winner}`))
+    .catch((err) => console.error(`[ChessGame] endGame failed for ${gameCode}:`, err.message));
 }
 
 module.exports = { init, activateGame, recordMove, recordDrawOffer, endGame };

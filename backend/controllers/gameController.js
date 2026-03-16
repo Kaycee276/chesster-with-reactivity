@@ -79,9 +79,7 @@ class GameController {
 
       // Push updated board to Somnia (fire-and-forget).
       // The Reactivity subscription on each client delivers the MoveMade event.
-      chessGameService.recordMove(
-        gameCode, from, to, game.board_state, game.in_check,
-      ).catch(() => {});
+      chessGameService.recordMove(gameCode, from, to, game.board_state, game.in_check);
 
       if (game.status !== "active") {
         timerService.clearTimer(gameCode);
@@ -125,7 +123,7 @@ class GameController {
 
       // Broadcast draw offer via Somnia Reactivity so the opponent sees it.
       if (playerAddress) {
-        chessGameService.recordDrawOffer(gameCode, playerAddress).catch(() => {});
+        chessGameService.recordDrawOffer(gameCode, playerAddress);
       }
 
       res.json({ success: true, data: game });
