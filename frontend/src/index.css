@@ -22,8 +22,8 @@
 
 	/* Accent */
 	--accent-primary: #16a34a;
-  --accent-light: #22c55e;
-  --accent-dark: #15803d;
+	--accent-light: #22c55e;
+	--accent-dark: #15803d;
 
 	/* Common */
 	--success: #22c55e; /* Green */
@@ -135,8 +135,12 @@ button:disabled {
 
 /* Chess piece slide animation */
 @keyframes pieceSlide {
-	from { transform: translate(var(--piece-dx, 0px), var(--piece-dy, 0px)); }
-	to   { transform: translate(0, 0); }
+	from {
+		transform: translate(var(--piece-dx, 0px), var(--piece-dy, 0px));
+	}
+	to {
+		transform: translate(0, 0);
+	}
 }
 
 @media screen and (max-width: 768px) {
@@ -154,5 +158,27 @@ button:disabled {
 	}
 	select {
 		font-size: 0.875rem;
+	}
+}
+
+@keyframes tick {
+	0%,
+	100% {
+		transform: scale(1);
+	}
+	50% {
+		transform: scale(1.04);
+	}
+}
+@keyframes shake {
+	0%,
+	100% {
+		transform: translateX(0);
+	}
+	25% {
+		transform: translateX(-2px);
+	}
+	75% {
+		transform: translateX(2px);
 	}
 }

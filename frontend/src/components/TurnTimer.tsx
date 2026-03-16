@@ -1,5 +1,3 @@
-import { Timer } from "lucide-react";
-
 interface GameTimerProps {
 	secondsLeft: number;
 	totalSeconds: number;
@@ -11,27 +9,83 @@ function formatTime(s: number): string {
 	return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-export default function GameTimer({ secondsLeft, totalSeconds }: GameTimerProps) {
-	const pct = totalSeconds > 0 ? (secondsLeft / totalSeconds) * 100 : 0;
+function getColor(s: number, total: number): string {
+	if (s <= 15) return "#E24B4A";
+	if (s <= 60) return "#EF9F27";
+	if (s / total > 0.5) return "#1D9E75";
+	return "#378ADD";
+}
+
+function getStatus(s: number, total: number): string {
+	if (s <= 15) return "Almost out!";
+	if (s <= 60) return "Running low";
+	if (s / total > 0.5) return "On track";
+	return "Use your time";
+}
+
+export default function GameTimer({
+	secondsLeft,
+	totalSeconds,
+}: GameTimerProps) {
+	const r = 11;
+	const circ = 2 * Math.PI * r;
+	const offset = circ * (1 - Math.max(0, secondsLeft) / totalSeconds);
+	const color = getColor(secondsLeft, totalSeconds);
 	const urgent = secondsLeft <= 60;
-	const display = formatTime(secondsLeft);
+	const critical = secondsLeft <= 15;
 
 	return (
-		<div className="flex items-center gap-2">
-			<Timer size={12} className={urgent ? "text-red-500" : "text-(--text-tertiary)"} />
-			<span
-				className={`font-mono font-bold text-sm tabular-nums ${urgent ? "text-red-500 animate-pulse" : "text-(--text-secondary)"}`}
+		<div
+			className={`inline-flex items-center gap-2.5  rounded-full px-3.5 py-1.5 pl-1.5
+      ${critical ? "animate-pulse" : ""}`}
+		>
+			{/* Mini arc */}
+			<svg
+				width="28"
+				height="28"
+				viewBox="0 0 28 28"
+				className={
+					urgent && !critical ? "animate-[tick_1s_ease-in-out_infinite]" : ""
+				}
 			>
-				{display}
-			</span>
-			<div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-				<div
-					className={`h-full rounded-full transition-all duration-1000 ${
-						urgent ? "bg-red-500" : pct > 50 ? "bg-green-500" : "bg-yellow-400"
-					}`}
-					style={{ width: `${Math.max(0, pct)}%` }}
+				<circle
+					cx="14"
+					cy="14"
+					r={r}
+					fill="none"
+					stroke="#374151"
+					strokeWidth="2.5"
 				/>
-			</div>
+				<circle
+					cx="14"
+					cy="14"
+					r={r}
+					fill="none"
+					stroke={color}
+					strokeWidth="2.5"
+					strokeLinecap="round"
+					strokeDasharray={circ}
+					strokeDashoffset={offset}
+					transform="rotate(-90 14 14)"
+					className="transition-all duration-1000"
+				/>
+			</svg>
+
+			{/* Time */}
+			<span
+				className="font-mono text-sm font-medium tabular-nums transition-colors duration-400"
+				style={{ color: urgent ? color : "white" }}
+			>
+				{formatTime(secondsLeft)}
+			</span>
+
+			{/* Divider */}
+			<span className="w-px h-3 bg-white" />
+
+			{/* Status */}
+			<span className="text-[11px] text-(--text-secondary)">
+				{getStatus(secondsLeft, totalSeconds)}
+			</span>
 		</div>
 	);
 }
