@@ -4,9 +4,6 @@ const chessEngine      = require("../services/chessEngine");
 const escrowService    = require("../services/escrowService");
 const chessGameService = require("../services/chessGameService");
 
-// Initialize escrow service (uses Somnia RPC via env vars)
-escrowService.init();
-
 // On-chain MatchStatus enum values
 const ON_CHAIN_STATUS = { PENDING: 0, ACTIVE: 1, RESOLVED: 2, REFUNDED: 3 };
 

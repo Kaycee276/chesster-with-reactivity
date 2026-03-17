@@ -168,4 +168,4 @@ async function endGame(gameCode, dbGame, winner, reason) {
     .catch((err) => console.error(`[ChessGame] endGame failed for ${gameCode}:`, err.message));
 }
 
-module.exports = { init, activateGame, recordMove, recordDrawOffer, endGame };
+module.exports = { init, activateGame, recordMove, recordDrawOffer, endGame, enqueue, getWallet: () => wallet };

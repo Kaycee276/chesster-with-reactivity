@@ -2,8 +2,6 @@ const express = require("express");
 const router = express.Router();
 const escrowService = require("../services/escrowService");
 
-escrowService.init();
-
 /**
  * Health check
  */
