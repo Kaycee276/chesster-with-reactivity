@@ -485,10 +485,10 @@ export const useGameNotifications = () => {
     }
   }, [status, winner, endReason, playerColor, addToast]);
 
-  // Poll for escrow settlement every 3 s until settled or failed
+  // Poll for escrow settlement every 3 s until settled or refunded
   useEffect(() => {
     if (status !== "finished" || !wagerAmount) return;
-    if (escrowStatus === "settled" || escrowStatus === "failed") return;
+    if (escrowStatus === "settled" || escrowStatus === "refunded") return;
     const id = setInterval(fetchGameState, 3000);
     return () => clearInterval(id);
   }, [status, wagerAmount, escrowStatus, fetchGameState]);
